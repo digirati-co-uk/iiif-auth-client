@@ -1,0 +1,30 @@
+body {
+    font-family: sans-serif; 
+}
+
+#viewer {
+    width: 400px;
+    height: 400px;
+    float:left;
+    border:1px solid black;
+}
+
+#usermessages {
+    padding: 5px; 
+    margin-left:8px;
+    border: 2px solid gray; 
+    font-size: 11px; 
+    color: gray;
+    height:390px;
+    min-width: 400px;
+    overflow:scroll;
+    float:left;
+}
+
+#usermessages p {
+    margin:0;
+}
+
+h1 {
+    font-size: 18px;
+}
