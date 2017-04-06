@@ -58,7 +58,6 @@ function init(){
 }
 
 async function loadImage(imageServiceId, token){
-
     let infoResponse;
     try{
         infoResponse = await loadInfo(imageServiceId, token);
@@ -218,13 +217,13 @@ function openTokenService(tokenService){
         var tokenUrl = tokenService["@id"] + "?messageId=" + messageId + "&origin=" + getOrigin();
         document.getElementById("commsFrame").src = tokenUrl;
 
-        // reject for any unhandled messages after a configurable timeout
+        // reject any unhandled messages after a configurable timeout
         const postMessageTimeout = 5000;
         setTimeout(() => {
             if(messages[messageId]){
                 messages[messageId].reject(
                     "Message unhandled after " + postMessageTimeout + "ms, rejecting");
-                delete messages[event.data.messageId];
+                delete messages[messageId];
             }
         }, postMessageTimeout);
     });
