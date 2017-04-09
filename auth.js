@@ -137,8 +137,9 @@ async function doAuthChain(infoResponse){
     let services = asArray(infoResponse.info.service);
     let lastAttempted = null;
     let imageService = infoResponse.requestedId;
+    let cookieServiceWindow = null;
 
-    // repitition of logic is left in these steps for clarity:
+    // repetition of logic is left in these steps for clarity:
     
     log("Looking for external pattern");
     let serviceToTry = first(services, s => s.profile === PROFILE_EXTERNAL);
@@ -251,9 +252,13 @@ function receiveMessage(event) {
 }
 
 function openCookieService(cookieService){
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
         log("Interacting with cookie service in new tab - " + cookieService["@id"]);
         let win = window.open(cookieService["@id"] + "?origin=" + getOrigin());
+        if(!win){
+            reject("failed to open new window");
+            return;
+        }
         var poll = window.setInterval(() => {
             if(win.closed){
                 log("cookie service window is now closed")
