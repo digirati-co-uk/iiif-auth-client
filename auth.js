@@ -41,20 +41,72 @@ function loadInfo(imageServiceId, token){
 }
 
 function init(){
-    const qs = /image=(.*)/g.exec(window.location.search);
-    if(qs && qs[1]){
-        let imageServiceId = qs[1].replace(/\/info\.json$/, '');
-        document.querySelector("h1").innerText = imageServiceId;
-        loadImage(imageServiceId).then(infoResponse => {
-            if(infoResponse){
-                if(infoResponse.degraded || infoResponse.status === 401){
-                    doAuthChain(infoResponse);
-                }
-            }
+    const imageQs = /image=(.*)/g.exec(window.location.search);
+    const sourceQs = /sources=(.*)/g.exec(window.location.search);
+    if(imageQs && imageQs[1]){
+        let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
+        selectImage(imageServiceId);
+    } else if(sourceQs && sourceQs[1]) {
+        loadSourceList(sourceQs[1]).then(sources => {
+            populateSourceList(sources);
         });
     } else {
         document.querySelector("h1").innerText = "(no image on query string)";
     }
+}
+
+function selectImage(imageServiceId){
+    document.querySelector("h1").innerText = imageServiceId;
+    let infoJsonAnchor = document.getElementById("infoJson");
+    let infoJsonUrl = imageServiceId + "/info.json";
+    infoJsonAnchor.href = infoJsonUrl;
+    infoJsonAnchor.innerText = infoJsonUrl;        
+    loadImage(imageServiceId).then(infoResponse => {
+        if(infoResponse){
+            if(infoResponse.degraded || infoResponse.status === 401){
+                doAuthChain(infoResponse);
+            }
+        }
+    });
+}
+
+function populateSourceList(sources){
+    let sourceList = document.getElementById("sourceList");
+    sources.forEach(image => {
+        let opt = document.createElement("option");
+        opt.value = image.id;
+        opt.innerText = image.label;
+        sourceList.appendChild(opt);
+    });
+    sourceList.style.display = "block";
+    sourceList.addEventListener("change", () => {
+        let imageService = sourceList.options[sourceList.selectedIndex].value;
+        selectImage(imageService);
+    });
+}
+
+
+// load a set of sample images from an instance of iiif-auth-server
+function loadSourceList(sourcesUrl){
+    return new Promise((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open('GET', sourcesUrl);
+        request.onload = function(){
+            try {
+                if(this.status === 200){
+                    resolve(JSON.parse(this.response));
+                } else {
+                    reject(this.status + " " + this.statusText);
+                } 
+            } catch(e) {
+                reject(e.message);
+            }
+        };
+        request.onerror = function() {
+            reject(this.status + " " + this.statusText);
+        };        
+        request.send();
+    });
 }
 
 async function loadImage(imageServiceId, token){
@@ -136,8 +188,7 @@ async function doAuthChain(infoResponse){
     }
     let services = asArray(infoResponse.info.service);
     let lastAttempted = null;
-    let imageService = infoResponse.requestedId;
-    let cookieServiceWindow = null;
+    let requestedId = infoResponse.requestedId;
 
     // repetition of logic is left in these steps for clarity:
     
@@ -145,7 +196,7 @@ async function doAuthChain(infoResponse){
     let serviceToTry = first(services, s => s.profile === PROFILE_EXTERNAL);
     if(serviceToTry){
         lastAttempted = serviceToTry;
-        let success = await attemptImageWithToken(serviceToTry, imageService);
+        let success = await attemptImageWithToken(serviceToTry, requestedId);
         if(success) return;
     }
 
@@ -153,19 +204,33 @@ async function doAuthChain(infoResponse){
     serviceToTry = first(services, s => s.profile === PROFILE_KIOSK);
     if(serviceToTry){
         lastAttempted = serviceToTry;
-        await openCookieService(serviceToTry);
-        let success = await attemptImageWithToken(serviceToTry, imageService);
-        if(success) return;
+        let kioskWindow = openContentProviderWindow(serviceToTry);
+        if(kioskWindow){
+            await userInteractionWithContentProvider(kioskWindow);
+            let success = await attemptImageWithToken(serviceToTry, requestedId);
+            if(success) return;
+        } else {
+            log("Could not open kiosk window");
+        }
     }
+
+    // The code for the next two patterns is identical (other than the profile name).
+    // The difference is in the expected behaviour of
+    //
+    //    await userInteractionWithContentProvider(contentProviderWindow);
+    // 
+    // For clickthrough the opened window should close immediately having established
+    // a session, whereas for login the user might spend some time entering credentials etc.
 
     log("Looking for clickthrough pattern");
     serviceToTry = first(services, s => s.profile === PROFILE_CLICKTHROUGH);
     if(serviceToTry){
         lastAttempted = serviceToTry;
-        let accepted = await showOpenCookieServiceModal(serviceToTry);
-        if(accepted){
-            await openCookieService(serviceToTry);
-            let success = await attemptImageWithToken(serviceToTry, imageService);
+        let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
+        if(contentProviderWindow){
+            // should close immediately
+            await userInteractionWithContentProvider(contentProviderWindow);
+            let success = await attemptImageWithToken(serviceToTry, requestedId);
             if(success) return;
         } 
     }
@@ -174,10 +239,11 @@ async function doAuthChain(infoResponse){
     serviceToTry = first(services, s => s.profile === PROFILE_LOGIN);
     if(serviceToTry){
         lastAttempted = serviceToTry;
-        let accepted = await showOpenCookieServiceModal(serviceToTry);
-        if(accepted){
-            await openCookieService(serviceToTry);
-            let success = await attemptImageWithToken(serviceToTry, imageService);
+        let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
+        if(contentProviderWindow){
+            // we expect the user to spend some time interacting
+            await userInteractionWithContentProvider(contentProviderWindow);
+            let success = await attemptImageWithToken(serviceToTry, requestedId);
             if(success) return;
         } 
     }
@@ -251,16 +317,12 @@ function receiveMessage(event) {
     }
 }
 
-function openCookieService(cookieService){
-    return new Promise((resolve, reject) => {
-        log("Interacting with cookie service in new tab - " + cookieService["@id"]);
-        let win = window.open(cookieService["@id"] + "?origin=" + getOrigin());
-        if(!win){
-            reject("failed to open new window");
-            return;
-        }
+function userInteractionWithContentProvider(contentProviderWindow){
+    return new Promise((resolve) => {
+        // What happens here is forever a mystery to a client application.
+        // It can but wait.
         var poll = window.setInterval(() => {
-            if(win.closed){
+            if(contentProviderWindow.closed){
                 log("cookie service window is now closed")
                 window.clearInterval(poll);
                 resolve();
@@ -280,21 +342,29 @@ function sanitise(s, allowHtml){
     return s;
 }
 
-function showOpenCookieServiceModal(service){
+function openContentProviderWindow(service){
+    let cookieServiceUrl = service["@id"] + "?origin=" + getOrigin();
+    log("Opening content provider window: " + cookieServiceUrl);
+    return window.open(cookieServiceUrl);
+}
+
+function getContentProviderWindowFromModal(service){
     return new Promise(resolve => {
         hideModals();
         modal = document.getElementById("beforeOpenCookieServiceModal");
         modal.querySelector(".close").onclick = (ev => {
-            resolve(false);
             hideModals();
+            resolve(null);
         });
         modal.querySelector("#csConfirm").onclick = (ev => {
-            resolve(true);
+            log("Interacting with cookie service in new tab - " + service["@id"]);
+            let win = openContentProviderWindow(service);
             hideModals();
+            resolve(win);
         });
         modal.querySelector("#csCancel").onclick = (ev => {
-            resolve(false);
             hideModals();
+            resolve(null);
         });
         if(service.label){
             modal.querySelector("#csLabel").innerText = sanitise(service.label);

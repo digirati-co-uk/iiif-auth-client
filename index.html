@@ -8,7 +8,11 @@
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
+    <select id="sourceList">
+        <option value="">test images...</option>
+    </select>
     <h1>Loading...</h1>
+    <p><a href="" id="infoJson" target="_blank">Link to info.json</a></p>
     <div id="viewer"></div>
     <div id="usermessages"></div>
     <iframe id="commsFrame" width="100px" height="60px"></iframe>
@@ -24,7 +28,6 @@
             <button id="csConfirm">*confirmLabel*</button>
         </div>
     </div>
-
 
     <div id="failureModal" class="modal">
         <div class="modal-content">
