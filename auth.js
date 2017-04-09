@@ -41,20 +41,72 @@ function loadInfo(imageServiceId, token){
 }
 
 function init(){
-    const qs = /image=(.*)/g.exec(window.location.search);
-    if(qs && qs[1]){
-        let imageServiceId = qs[1].replace(/\/info\.json$/, '');
-        document.querySelector("h1").innerText = imageServiceId;
-        loadImage(imageServiceId).then(infoResponse => {
-            if(infoResponse){
-                if(infoResponse.degraded || infoResponse.status === 401){
-                    doAuthChain(infoResponse);
-                }
-            }
+    const imageQs = /image=(.*)/g.exec(window.location.search);
+    const sourceQs = /sources=(.*)/g.exec(window.location.search);
+    if(imageQs && imageQs[1]){
+        let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
+        selectImage(imageServiceId);
+    } else if(sourceQs && sourceQs[1]) {
+        loadSourceList(sourceQs[1]).then(sources => {
+            populateSourceList(sources);
         });
     } else {
         document.querySelector("h1").innerText = "(no image on query string)";
     }
+}
+
+function selectImage(imageServiceId){
+    document.querySelector("h1").innerText = imageServiceId;
+    let infoJsonAnchor = document.getElementById("infoJson");
+    let infoJsonUrl = imageServiceId + "/info.json";
+    infoJsonAnchor.href = infoJsonUrl;
+    infoJsonAnchor.innerText = infoJsonUrl;        
+    loadImage(imageServiceId).then(infoResponse => {
+        if(infoResponse){
+            if(infoResponse.degraded || infoResponse.status === 401){
+                doAuthChain(infoResponse);
+            }
+        }
+    });
+}
+
+function populateSourceList(sources){
+    let sourceList = document.getElementById("sourceList");
+    sources.forEach(image => {
+        let opt = document.createElement("option");
+        opt.value = image.id;
+        opt.innerText = image.label;
+        sourceList.appendChild(opt);
+    });
+    sourceList.style.display = "block";
+    sourceList.addEventListener("change", () => {
+        let imageService = sourceList.options[sourceList.selectedIndex].value;
+        selectImage(imageService);
+    });
+}
+
+
+// load a set of sample images from an instance of iiif-auth-server
+function loadSourceList(sourcesUrl){
+    return new Promise((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open('GET', sourcesUrl);
+        request.onload = function(){
+            try {
+                if(this.status === 200){
+                    resolve(JSON.parse(this.response));
+                } else {
+                    reject(this.status + " " + this.statusText);
+                } 
+            } catch(e) {
+                reject(e.message);
+            }
+        };
+        request.onerror = function() {
+            reject(this.status + " " + this.statusText);
+        };        
+        request.send();
+    });
 }
 
 async function loadImage(imageServiceId, token){
@@ -154,7 +206,7 @@ async function doAuthChain(infoResponse){
         lastAttempted = serviceToTry;
         let kioskWindow = openContentProviderWindow(serviceToTry);
         if(kioskWindow){
-            await userInteractionWithContentProvider(serviceToTry);
+            await userInteractionWithContentProvider(kioskWindow);
             let success = await attemptImageWithToken(serviceToTry, requestedId);
             if(success) return;
         } else {

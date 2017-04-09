@@ -62,3 +62,13 @@ h1 {
     text-decoration: none;
     cursor: pointer;
 }
+
+#sourceList {
+    display:none;
+}
+
+#commsFrame {
+    display:none;
+    width:300px;
+    height:100px;
+}
