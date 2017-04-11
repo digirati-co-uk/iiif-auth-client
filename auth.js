@@ -78,11 +78,16 @@ function populateSourceList(sources){
         opt.innerText = image.label;
         sourceList.appendChild(opt);
     });
-    sourceList.style.display = "block";
+    sourceList.style.display = "block";    
     sourceList.addEventListener("change", () => {
-        let imageService = sourceList.options[sourceList.selectedIndex].value;
-        selectImage(imageService);
+        selectImage(sourceList.options[sourceList.selectedIndex].value);
     });
+    let reloadButton = document.getElementById("reloadSource");
+    reloadButton.style.display = "block";    
+    reloadButton.addEventListener("click", () => {
+        selectImage(sourceList.options[sourceList.selectedIndex].value);
+    }); 
+
 }
 
 
