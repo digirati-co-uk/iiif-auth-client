@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>IIIF Auth demo</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+    <select id="sourceList">
+        <option value="">test images...</option>
+    </select>
+    <button id="reloadSource">Reload</button>
+    <h1>Loading...</h1>
+    <p><a href="" id="infoJson" target="_blank">Link to info.json</a></p>
+    <div id="viewer"></div>
+    <div id="usermessages"></div>
+    <iframe id="commsFrame" width="100px" height="60px"></iframe>
+
+    <div id="beforeOpenCookieServiceModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <p id="csLabel">*label*, can be displayed as call to action to show this dialogue if not triggered in code</p>
+            <h3 id="csHeader">*header*, use as heading in dialog</h3>
+            <div id="csDescription">*description", may contain HTML, must be sanitised</div>
+            <hr/>
+            <button id="csCancel">Cancel</button><!-- string not provided by service -->
+            <button id="csConfirm">*confirmLabel*</button>
+        </div>
+    </div>
+
+    <div id="failureModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="failureHeader">*failureHeader*, use as heading in dialog</h3>
+            <div id="failureDescription">*failureDescription", may contain HTML, must be sanitised</div>
+            <hr/>
+            <button id="failureClose">Close</button><!-- string not provided by service -->
+        </div>
+    </div>
+
+    <script src="lib/polyfill.js"></script>
+    <script src="openseadragon/openseadragon.min.js"></script>
+    <script src="lib/auth.js"></script>
+
+</body>
+</html>
