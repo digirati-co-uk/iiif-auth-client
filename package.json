@@ -1,0 +1,30 @@
+{
+  "name": "iiif-auth-client",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "babel auth.js -d lib -s"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.0.0",
+    "babel-preset-env": "^1.5.1"
+  },
+  "babel": {
+    "presets": [
+      [
+        "env",
+        {
+          "targets": {
+            "browsers": [
+              "last 2 versions",
+              "IE >= 11"
+            ]
+          },
+          "useBuiltIns": true
+        }
+      ]
+    ]
+  },
+  "dependencies": {
+    "core-js": "^2.4.1"
+  }
+}
