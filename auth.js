@@ -146,6 +146,20 @@ function renderImage(info){
         prefixUrl: "openseadragon/images/",
         tileSources: info
     });
+    makeDownloadLink(info);
+}
+
+function makeDownloadLink(info){
+    let largeDownload = document.getElementById("largeDownload");
+    let w = info["width"];
+    let h = info["height"]
+    let dims = "(" + w + " x " + h + ")";
+    maxWAssertion = first(info["profile"], pf => pf["maxWidth"]);
+    if(maxWAssertion){
+        dims += " (max width is " + maxWAssertion["maxWidth"] + ")";
+    }
+    largeDownload.innerText = "Download large image: " + dims;
+    largeDownload.setAttribute("href", info["@id"] + "/full/full/0/default.jpg")
 }
 
 function asArray(obj){
