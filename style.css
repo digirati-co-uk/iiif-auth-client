@@ -72,3 +72,6 @@ h1 {
     width:300px;
     height:100px;
 }
+#downloads {
+    clear: both;
+}
