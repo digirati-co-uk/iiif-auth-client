@@ -1,30 +1,75 @@
-const PROFILE_LOGIN = 'http://iiif.io/api/auth/1/login'
-const PROFILE_CLICKTHROUGH = 'http://iiif.io/api/auth/1/clickthrough'
-const PROFILE_KIOSK = 'http://iiif.io/api/auth/1/kiosk'
-const PROFILE_EXTERNAL = 'http://iiif.io/api/auth/1/external'
-const PROFILE_TOKEN = 'http://iiif.io/api/auth/1/token'
-const PROFILE_LOGOUT = 'http://iiif.io/api/auth/1/logout'
+const PROFILE_LOGIN = 'http://iiif.io/api/auth/1/login';
+const PROFILE_CLICKTHROUGH = 'http://iiif.io/api/auth/1/clickthrough';
+const PROFILE_KIOSK = 'http://iiif.io/api/auth/1/kiosk';
+const PROFILE_EXTERNAL = 'http://iiif.io/api/auth/1/external';
+const PROFILE_TOKEN = 'http://iiif.io/api/auth/1/token';
+const PROFILE_LOGOUT = 'http://iiif.io/api/auth/1/logout';
+const PROFILE_PROBE = 'http://iiif.io/api/auth/1/probe';
+const IMAGE_SERVICE_TYPE = 'ImageService2';
+const HTTP_METHOD_GET = 'GET';
+const HTTP_METHOD_HEAD = 'HEAD';
 
 let viewer = null;   
-let messages = {}
+let messages = {};
+let sourcesMap = {};
 window.addEventListener("message", receiveMessage, false);
 
 // resolve returns { infoJson, status }
 // reject returns an error message
-function loadInfo(imageServiceId, token){
+function getInfoResponse(resourceId, token){
+    /*
+        This now synthesises an object that can be passed around, describing the
+        resource and its auth services, and the user's current HTTP status, obtained
+        by interacting with the probe service.
+        If this is an image service, the info and the status are obtained by 
+        making a GET request for the info.json.
+        If it isn't a service, the info is constructed from information already
+        supplied to the "viewer" (usually from a Manifest) and the status is obtained by
+        making a HEAD request to the probe service - which will be the resource id
+        itself unless an alternative has been specified.
+    */
+    
+    // we have already stored this information when initialising
+    let knownResource = sourcesMap[resourceId];
+    let info = null;
+    let probeService = resourceId;
+    let method = HTTP_METHOD_GET;
+    if(knownResource.behaviour == "service"){
+        probeService = resourceId + "/info.json";
+        log("this is a service, so the probe is " + probeService);
+    } else {
+        info = knownResource;
+        let cookieService = first(knownResource.service, s => s.profile === PROFILE_LOGIN);
+        if(cookieService){
+            let assertedProbeService = first(cookieService.service, s => s.profile === PROFILE_PROBE);
+            if(assertedProbeService){
+                log("This resource asserts a separate probe service!");
+                probeService = assertedProbeService["@id"];
+            }
+        } 
+        method = HTTP_METHOD_HEAD;
+        log("This is a content resource at " + resourceId);
+        log("The probe service is " + probeService);
+    }
+    log("Probe will be requested with HTTP " + method);
     return new Promise((resolve, reject) => {
         const request = new XMLHttpRequest();
-        request.open('GET', imageServiceId + "/info.json");
+        request.open(method, probeService);
         if(token){
             request.setRequestHeader("Authorization", "Bearer " + token);
         }
         request.onload = function(){
             try {
                 if(this.status === 200 || this.status === 401){
+                    if(method == HTTP_METHOD_GET){
+                        info = JSON.parse(this.response);
+                        info.id = info.id || info["@id"];
+                        info.type = IMAGE_SERVICE_TYPE;
+                    }
                     resolve({
-                        info: JSON.parse(this.response),
+                        info: info,
                         status: this.status,
-                        requestedId: imageServiceId
+                        requestedId: resourceId
                     });
                 } else {
                     reject(this.status + " " + this.statusText);
@@ -43,25 +88,41 @@ function loadInfo(imageServiceId, token){
 function init(){
     const imageQs = /image=(.*)/g.exec(window.location.search);
     const sourceQs = /sources=(.*)/g.exec(window.location.search);
+    const p3ManifestQs = /manifest=(.*)/g.exec(window.location.search)
     if(imageQs && imageQs[1]){
         let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
-        selectImage(imageServiceId);
+        sourcesMap[imageServiceId] = {
+            "behaviour": "service",
+            "id": imageServiceId
+        }
+        selectResource(imageServiceId);
     } else if(sourceQs && sourceQs[1]) {
         loadSourceList(sourceQs[1]).then(sources => {
             populateSourceList(sources);
         });
+    } else if(p3ManifestQs && p3ManifestQs[1]) {
+        loadResourceFromManifest(p3ManifestQs[1]).then(resource => {
+            selectResource(resource.id);
+        });    
     } else {
         document.querySelector("h1").innerText = "(no image on query string)";
     }
 }
 
-function selectImage(imageServiceId){
-    document.querySelector("h1").innerText = imageServiceId;
-    let infoJsonAnchor = document.getElementById("infoJson");
-    let infoJsonUrl = imageServiceId + "/info.json";
-    infoJsonAnchor.href = infoJsonUrl;
-    infoJsonAnchor.innerText = infoJsonUrl;        
-    loadImage(imageServiceId).then(infoResponse => {
+function selectResource(resourceId){
+    // This will either be in the sourcesMap, or will be fetched as an info.json
+    // either way, we'll end up with an object that carries the resource URL and the auth services.
+    document.querySelector("h1").innerText = resourceId;
+    let resourceAnchor = document.getElementById("infoJson");
+    let resourceUrl = resourceId + "/info.json";
+    let resource = sourcesMap[resourceId];
+    if(resource && resource.behaviour != 'service'){
+        // not an info.json; just display a link
+        resourceUrl = resource.id;
+    }    
+    resourceAnchor.href = resourceUrl;
+    resourceAnchor.innerText = resourceUrl;
+    loadResource(resourceId).then(infoResponse => {
         if(infoResponse){
             if(infoResponse.degraded || infoResponse.status === 401){
                 doAuthChain(infoResponse);
@@ -71,23 +132,62 @@ function selectImage(imageServiceId){
 }
 
 function populateSourceList(sources){
+    sourcesMap = {};
     let sourceList = document.getElementById("sourceList");
     sources.forEach(image => {
         let opt = document.createElement("option");
         opt.value = image.id;
         opt.innerText = image.label;
         sourceList.appendChild(opt);
+        sourcesMap[image.id] = image;
     });
     sourceList.style.display = "block";    
     sourceList.addEventListener("change", () => {
-        selectImage(sourceList.options[sourceList.selectedIndex].value);
+        selectResource(sourceList.options[sourceList.selectedIndex].value);
     });
     let reloadButton = document.getElementById("reloadSource");
     reloadButton.style.display = "block";    
     reloadButton.addEventListener("click", () => {
-        selectImage(sourceList.options[sourceList.selectedIndex].value);
+        selectResource(sourceList.options[sourceList.selectedIndex].value);
     }); 
+}
 
+function loadResourceFromManifest(manifestUrl){
+    // This auth demo is not a Presentation API client, it's only for
+    // resources. But service-less resources are going to be found in
+    // Presentation 3 manifests, so it needs to load them to test. This
+    // just gets the first resource it can find.
+    sourcesMap = {};
+    return new Promise((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open('GET', manifestUrl);
+        request.onload = function(){
+            try {
+                if(this.status === 200){
+                    manifest = JSON.parse(this.response);
+                    if(    manifest.items
+                        && manifest.items[0].items
+                        && manifest.items[0].items[0].items){
+                        // this is very fragile
+                        const resource = manifest.items[0].items[0].items[0].body;
+                        sourcesMap[resource.id] = resource;
+                        resource.partOf = manifestUrl;
+                        resolve(resource);
+                    } else {
+                        reject("Cannot find Presentation 3 resource in this manifest");
+                    }                    
+                } else {
+                    reject(this.status + " " + this.statusText);
+                } 
+            } catch(e) {
+                reject(e.message);
+            }
+        };
+        request.onerror = function() {
+            reject(this.status + " " + this.statusText);
+        };        
+        request.send();
+    });
 }
 
 
@@ -114,33 +214,58 @@ function loadSourceList(sourcesUrl){
     });
 }
 
-async function loadImage(imageServiceId, token){
+async function loadResource(resourceId, token){
     let infoResponse;
     try{
-        infoResponse = await loadInfo(imageServiceId, token);
+        infoResponse = await getInfoResponse(resourceId, token);
     } catch (e) {
-        log("Could not load " + imageServiceId);
+        log("Could not load " + resourceId);
         log(e);
     }
     if(infoResponse && infoResponse.status === 200){
-        renderImage(infoResponse.info);
-        if(infoResponse.info["@id"] != imageServiceId){
-            log("The requested imageService is " + imageServiceId);
-            log("The @id returned is " + infoResponse.info["@id"]);
-            log("This image is most likely the degraded version of the one you asked for")
-            infoResponse.degraded = true;
-        }
+        renderResource(infoResponse, resourceId);
     }
     return infoResponse;
 }
 
+function renderResource(infoResponse, requestedResource){
+    destroyViewer();
+    if(infoResponse.info.type == IMAGE_SERVICE_TYPE){
+        log("This resource is an image service.");
+        renderImageService(infoResponse.info);
+        if(infoResponse.info["@id"] != requestedResource){
+            log("The requested imageService is " + requestedResource);
+            log("The @id returned is " + infoResponse.info["@id"]);
+            log("This image is most likely the degraded version of the one you asked for")
+            infoResponse.degraded = true;
+        }
+    } else {
+        log("The resource is of type " + infoResponse.info.type);
+        let viewerHTML;
+        if(infoResponse.info.type == "Video"){
+            viewerHTML = "<video src='" + infoResponse.info.id + "' autoplay>Video here</video>";            
+        } else if(infoResponse.info.type == "Audio"){
+            viewerHTML = "<audio src='" + infoResponse.info.id + "' autoplay>audio here</audio>";
+        } else if(infoResponse.info.type == "Text"){
+            viewerHTML = "<a href='" + infoResponse.info.id + "' target='_blank'>Open document - " + infoResponse.info.label + "</a>";
+        } else {
+            viewerHTML = "<p>Not a known type</p>";
+        }
+        document.getElementById("viewer").innerHTML = viewerHTML;
+    }
+}
 
-function renderImage(info){
-    log("OSD will load " + info["@id"]);
+function destroyViewer(){
     if(viewer){
         viewer.destroy();
         viewer = null;
     }
+    document.getElementById("viewer").innerHTML = "";
+    document.getElementById("largeDownload").innerHTML = "";
+}
+
+function renderImageService(info){
+    log("OSD will load " + info["@id"]);
     viewer = OpenSeadragon({
         id: "viewer",
         prefixUrl: "openseadragon/images/",
@@ -186,10 +311,10 @@ async function attemptImageWithToken(authService, imageService){
         log("found token service: " + tokenService["@id"]);
         let tokenMessage = await openTokenService(tokenService); 
         if(tokenMessage && tokenMessage.accessToken){
-            let withTokenInfoResponse = await loadImage(imageService, tokenMessage.accessToken);
+            let withTokenInfoResponse = await loadResource(imageService, tokenMessage.accessToken);
             log("info request with token resulted in " + withTokenInfoResponse.status);
             if(withTokenInfoResponse.status == 200){
-                renderImage(withTokenInfoResponse.info);
+                renderResource(withTokenInfoResponse, imageService);
                 return true;
             }
         }  
