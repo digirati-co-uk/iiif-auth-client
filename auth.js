@@ -18,15 +18,28 @@ window.addEventListener("message", receiveMessage, false);
 // reject returns an error message
 function getInfoResponse(resourceId, token){
     /*
-        This now synthesises an object that can be passed around, describing the
+        This now **synthesises** an object that can be passed around, describing the
         resource and its auth services, and the user's current HTTP status, obtained
         by interacting with the probe service.
+        
         If this is an image service, the info and the status are obtained by 
         making a GET request for the info.json.
+        
         If it isn't a service, the info is constructed from information already
         supplied to the "viewer" (usually from a Manifest) and the status is obtained by
-        making a HEAD request to the probe service - which will be the resource id
-        itself unless an alternative has been specified.
+        interacting with the probe service. If no explicit probe service is supplied,
+        the content resource acts as its own probe service and the viewer makes a HEAD
+        request against it. If an explicit probe service is provided, the viewer must make
+        a GET request for it, and observe both the HTTP status of the response, and 
+        the contentLocation property of the probe response. If the response is a 200 but
+        the contentLocation is not what was asked for, it's just like a redirected info.json.
+
+        NOTE for implementers: resources arriving here will have a type.
+        In the UV (for example), a loaded P2 manifest won't have a type for the image service, but it will have a profile.
+        For consistency, the client should probably assign the resource a type:
+        
+        myService.type = IMAGE_SERVICE_TYPE
+
     */
     
     // we have already stored this information when initialising
@@ -34,7 +47,7 @@ function getInfoResponse(resourceId, token){
     let info = null;
     let probeService = resourceId;
     let method = HTTP_METHOD_GET;
-    if(knownResource.behaviour == "service"){
+    if(knownResource.type == IMAGE_SERVICE_TYPE){
         probeService = resourceId + "/info.json";
         log("this is a service, so the probe is " + probeService);
     } else {
@@ -45,9 +58,10 @@ function getInfoResponse(resourceId, token){
             if(assertedProbeService){
                 log("This resource asserts a separate probe service!");
                 probeService = assertedProbeService["@id"];
+            } else {
+                method = HTTP_METHOD_HEAD;
             }
         } 
-        method = HTTP_METHOD_HEAD;
         log("This is a content resource at " + resourceId);
         log("The probe service is " + probeService);
     }
@@ -62,9 +76,18 @@ function getInfoResponse(resourceId, token){
             try {
                 if(this.status === 200 || this.status === 401){
                     if(method == HTTP_METHOD_GET){
-                        info = JSON.parse(this.response);
-                        info.id = info.id || info["@id"];
-                        info.type = IMAGE_SERVICE_TYPE;
+                        probe = JSON.parse(this.response);
+                        if(knownResource.type == IMAGE_SERVICE_TYPE){
+                            info = probe;
+                            if(!info.hasOwnProperty("id")){
+                                info.id = probe.id || probe["@id"];
+                            }
+                            if(!info.hasOwnProperty("type")){
+                                info.type = IMAGE_SERVICE_TYPE;
+                            }                               
+                        } else {
+                            info.id = probe.contentLocation;
+                        }
                     }
                     resolve({
                         info: info,
@@ -92,7 +115,7 @@ function init(){
     if(imageQs && imageQs[1]){
         let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
         sourcesMap[imageServiceId] = {
-            "behaviour": "service",
+            "type": IMAGE_SERVICE_TYPE,
             "id": imageServiceId
         }
         selectResource(imageServiceId);
@@ -116,7 +139,7 @@ function selectResource(resourceId){
     let resourceAnchor = document.getElementById("infoJson");
     let resourceUrl = resourceId + "/info.json";
     let resource = sourcesMap[resourceId];
-    if(resource && resource.behaviour != 'service'){
+    if(resource && resource.type != IMAGE_SERVICE_TYPE){
         // not an info.json; just display a link
         resourceUrl = resource.id;
     }    
@@ -230,15 +253,15 @@ async function loadResource(resourceId, token){
 
 function renderResource(infoResponse, requestedResource){
     destroyViewer();
+    if(infoResponse.info.id != requestedResource){
+        log("The requested imageService is " + requestedResource);
+        log("The id returned is " + infoResponse.info.id);
+        log("This image is most likely the degraded version of the one you asked for")
+        infoResponse.degraded = true;
+    }
     if(infoResponse.info.type == IMAGE_SERVICE_TYPE){
         log("This resource is an image service.");
         renderImageService(infoResponse.info);
-        if(infoResponse.info["@id"] != requestedResource){
-            log("The requested imageService is " + requestedResource);
-            log("The @id returned is " + infoResponse.info["@id"]);
-            log("This image is most likely the degraded version of the one you asked for")
-            infoResponse.degraded = true;
-        }
     } else {
         log("The resource is of type " + infoResponse.info.type);
         let viewerHTML;
