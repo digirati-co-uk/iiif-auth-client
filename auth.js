@@ -47,12 +47,13 @@ function getInfoResponse(resourceId, token){
     let info = null;
     let probeService = resourceId;
     let method = HTTP_METHOD_GET;
+    let cookieService = null;
     if(knownResource.type == IMAGE_SERVICE_TYPE){
         probeService = resourceId + "/info.json";
         log("this is a service, so the probe is " + probeService);
     } else {
         info = knownResource;
-        let cookieService = first(knownResource.service, s => s.profile === PROFILE_LOGIN);
+        cookieService = first(knownResource.service, s => s.profile === PROFILE_LOGIN);
         if(cookieService){
             let assertedProbeService = first(cookieService.service, s => s.profile === PROFILE_PROBE);
             if(assertedProbeService){
@@ -67,6 +68,17 @@ function getInfoResponse(resourceId, token){
     }
     log("Probe will be requested with HTTP " + method);
     return new Promise((resolve, reject) => {
+        if(knownResource.type != IMAGE_SERVICE_TYPE && !cookieService){
+            // no presence of, or possibility of auth; we don't know if the
+            // resource will respond to a HEAD and we don't want to send a token
+            // because that imposes CORS reqts on the server that they might 
+            // not support because their content is open.
+            resolve({
+                info: info,
+                status: 200,
+                requestedId: resourceId
+            });
+        }
         const request = new XMLHttpRequest();
         request.open(method, probeService);
         if(token){
