@@ -10,6 +10,7 @@ const HTTP_METHOD_GET = 'GET';
 const HTTP_METHOD_HEAD = 'HEAD';
 
 let viewer = null;   
+let dashPlayer = null;   
 let messages = {};
 let sourcesMap = {};
 window.addEventListener("message", receiveMessage, false);
@@ -137,20 +138,28 @@ function init(){
         });
     } else if(p3ManifestQs && p3ManifestQs[1]) {
         loadResourceFromManifest(p3ManifestQs[1]).then(resource => {
-            selectResource(resource.id);
+            selectResource(resource);
         });    
     } else {
         document.querySelector("h1").innerText = "(no image on query string)";
     }
 }
 
-function selectResource(resourceId){
+function selectResource(resourceOrResourceId){
+    let resource;
+    let resourceId;
+    if(resourceOrResourceId.hasOwnProperty("id")){
+        resourceId = resourceOrResourceId.id;
+        resource = resourceOrResourceId;
+    } else {
+        resourceId = resourceOrResourceId;
+        resource = sourcesMap[resourceId];
+    }
     // This will either be in the sourcesMap, or will be fetched as an info.json
     // either way, we'll end up with an object that carries the resource URL and the auth services.
     document.querySelector("h1").innerText = resourceId;
     let resourceAnchor = document.getElementById("infoJson");
     let resourceUrl = resourceId + "/info.json";
-    let resource = sourcesMap[resourceId];
     if(resource && resource.type != IMAGE_SERVICE_TYPE){
         // not an info.json; just display a link
         resourceUrl = resource.id;
@@ -276,17 +285,33 @@ function renderResource(infoResponse, requestedResource){
         renderImageService(infoResponse.info);
     } else {
         log("The resource is of type " + infoResponse.info.type);
+        log("The resource is of format " + infoResponse.info.format);
         let viewerHTML;
+        let isDash = (infoResponse.info.format == "application/dash+xml");
+        let avUrl = infoResponse.info.id;
         if(infoResponse.info.type == "Video"){
-            viewerHTML = "<video src='" + infoResponse.info.id + "' autoplay>Video here</video>";            
+            viewerHTML = "<video id='html5AV' src='" + avUrl + "' autoplay>Video here</video>";            
         } else if(infoResponse.info.type == "Audio"){
-            viewerHTML = "<audio src='" + infoResponse.info.id + "' autoplay>audio here</audio>";
+            viewerHTML = "<audio id='html5AV' src='" + avUrl + "' autoplay>audio here</audio>";
         } else if(infoResponse.info.type == "Text"){
             viewerHTML = "<a href='" + infoResponse.info.id + "' target='_blank'>Open document - " + infoResponse.info.label + "</a>";
         } else {
             viewerHTML = "<p>Not a known type</p>";
         }
         document.getElementById("viewer").innerHTML = viewerHTML;
+        if(isDash){
+            dashPlayer = dashjs.MediaPlayer().create();
+            // for now, always send credentials, because we have a special server.
+            // TODO: This should only happen when we are sure auth services are in operation.
+            dashPlayer.setXHRWithCredentialsForType("MPD", true);
+            // There's also 
+            // dashPlayer.setXHRWithCredentialsForType("MediaSegment", true);
+            // dashPlayer.setXHRWithCredentialsForType("InitializationSegment", true);
+            // whether these get sent depends on whether the segment parts are authed with cookies,
+            // or with token fragments.
+            // TODO: How do we avoid the client having to work this out?
+            dashPlayer.initialize(document.querySelector("#html5AV"), avUrl, false);
+        }
     }
 }
 
@@ -295,6 +320,7 @@ function destroyViewer(){
         viewer.destroy();
         viewer = null;
     }
+    dashPlayer = null;
     document.getElementById("viewer").innerHTML = "";
     document.getElementById("largeDownload").innerHTML = "";
 }
