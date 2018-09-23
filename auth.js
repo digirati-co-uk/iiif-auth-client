@@ -77,7 +77,8 @@ function getInfoResponse(resourceId, token){
             resolve({
                 info: info,
                 status: 200,
-                requestedId: resourceId
+                requestedId: resourceId,
+                cookieService: null
             });
         }
         const request = new XMLHttpRequest();
@@ -105,7 +106,8 @@ function getInfoResponse(resourceId, token){
                     resolve({
                         info: info,
                         status: this.status,
-                        requestedId: resourceId
+                        requestedId: resourceId,
+                        cookieService: cookieService
                     });
                 } else {
                     reject(this.status + " " + this.statusText);
@@ -301,9 +303,9 @@ function renderResource(infoResponse, requestedResource){
         document.getElementById("viewer").innerHTML = viewerHTML;
         if(isDash){
             dashPlayer = dashjs.MediaPlayer().create();
-            // for now, always send credentials, because we have a special server.
-            // TODO: This should only happen when we are sure auth services are in operation.
-            dashPlayer.setXHRWithCredentialsForType("MPD", true);
+            // Only send credentials for a DASH request if an auth service was present on the resource.
+            let withCredentials = infoResponse.cookieService != null;
+            dashPlayer.setXHRWithCredentialsForType("MPD", withCredentials);
             // There's also 
             // dashPlayer.setXHRWithCredentialsForType("MediaSegment", true);
             // dashPlayer.setXHRWithCredentialsForType("InitializationSegment", true);
