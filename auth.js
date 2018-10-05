@@ -295,7 +295,7 @@ function renderResource(infoResponse, requestedResource){
             viewerHTML = "<video id='html5AV' src='" + avUrl + "' autoplay>Video here</video>";            
         } else if(infoResponse.info.type == "Audio"){
             viewerHTML = "<audio id='html5AV' src='" + avUrl + "' autoplay>audio here</audio>";
-        } else if(infoResponse.info.type == "Text"){
+        } else if(infoResponse.info.type == "Text" || infoResponse.info.type == "PhysicalObject"){
             viewerHTML = "<a href='" + infoResponse.info.id + "' target='_blank'>Open document - " + infoResponse.info.label + "</a>";
         } else {
             viewerHTML = "<p>Not a known type</p>";
@@ -313,6 +313,8 @@ function renderResource(infoResponse, requestedResource){
             // or with token fragments.
             // TODO: How do we avoid the client having to work this out?
             dashPlayer.initialize(document.querySelector("#html5AV"), avUrl, false);
+
+            // TODO - this is not getting destroyed correctly
         }
     }
 }
