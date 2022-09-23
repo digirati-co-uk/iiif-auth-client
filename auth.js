@@ -9,15 +9,15 @@ const IMAGE_SERVICE_TYPE = 'ImageService2';
 const HTTP_METHOD_GET = 'GET';
 const HTTP_METHOD_HEAD = 'HEAD';
 
-let viewer = null;   
-let dashPlayer = null;   
+let viewer = null;
+let dashPlayer = null;
 let messages = {};
 let sourcesMap = {};
 window.addEventListener("message", receiveMessage, false);
 
 // resolve returns { infoJson, status }
 // reject returns an error message
-function getInfoResponse(resourceId, token){
+function getInfoResponse(resourceId, token) {
     /*
         This now **synthesises** an object that can be passed around, describing the
         resource and its auth services, and the user's current HTTP status, obtained
@@ -42,34 +42,40 @@ function getInfoResponse(resourceId, token){
         myService.type = IMAGE_SERVICE_TYPE
 
     */
-    
+
     // we have already stored this information when initialising
     let knownResource = sourcesMap[resourceId];
     let info = null;
     let probeService = resourceId;
     let method = HTTP_METHOD_GET;
     let cookieService = null;
-    if(knownResource.type == IMAGE_SERVICE_TYPE){
+    if (knownResource.type == IMAGE_SERVICE_TYPE) {
         probeService = resourceId + "/info.json";
         log("this is a service, so the probe is " + probeService);
     } else {
         info = knownResource;
         cookieService = first(knownResource.service, s => s.profile === PROFILE_LOGIN);
-        if(cookieService){
+        if (cookieService) {
             let assertedProbeService = first(cookieService.service, s => s.profile === PROFILE_PROBE);
-            if(assertedProbeService){
+
+            // Update 2022-09-23 to allow probe service to be directly asserted on resource, but also on cookie service to avoi breaking existing experiements.
+            if (!assertedProbeService) {
+                assertedProbeService = first(knownResource.service, s => s.profile === PROFILE_PROBE);
+            }
+
+            if (assertedProbeService) {
                 log("This resource asserts a separate probe service!");
                 probeService = assertedProbeService["@id"];
             } else {
                 method = HTTP_METHOD_HEAD;
             }
-        } 
+        }
         log("This is a content resource at " + resourceId);
         log("The probe service is " + probeService);
     }
     log("Probe will be requested with HTTP " + method);
     return new Promise((resolve, reject) => {
-        if(knownResource.type != IMAGE_SERVICE_TYPE && !cookieService){
+        if (knownResource.type != IMAGE_SERVICE_TYPE && !cookieService) {
             // no presence of, or possibility of auth; we don't know if the
             // resource will respond to a HEAD and we don't want to send a token
             // because that imposes CORS reqts on the server that they might 
@@ -83,22 +89,22 @@ function getInfoResponse(resourceId, token){
         }
         const request = new XMLHttpRequest();
         request.open(method, probeService);
-        if(token){
+        if (token) {
             request.setRequestHeader("Authorization", "Bearer " + token);
         }
-        request.onload = function(){
+        request.onload = function() {
             try {
-                if(this.status === 200 || this.status === 401){
-                    if(method == HTTP_METHOD_GET){
+                if (this.status === 200 || this.status === 401) {
+                    if (method == HTTP_METHOD_GET) {
                         probe = JSON.parse(this.response);
-                        if(knownResource.type == IMAGE_SERVICE_TYPE){
+                        if (knownResource.type == IMAGE_SERVICE_TYPE) {
                             info = probe;
-                            if(!info.hasOwnProperty("id")){
+                            if (!info.hasOwnProperty("id")) {
                                 info.id = probe.id || probe["@id"];
                             }
-                            if(!info.hasOwnProperty("type")){
+                            if (!info.hasOwnProperty("type")) {
                                 info.type = IMAGE_SERVICE_TYPE;
-                            }                               
+                            }
                         } else {
                             info.id = probe.contentLocation;
                         }
@@ -111,46 +117,46 @@ function getInfoResponse(resourceId, token){
                     });
                 } else {
                     reject(this.status + " " + this.statusText);
-                } 
-            } catch(e) {
+                }
+            } catch (e) {
                 reject(e.message);
             }
         };
         request.onerror = function() {
             reject(this.status + " " + this.statusText);
-        };        
+        };
         request.send();
     });
 }
 
-function init(){
+function init() {
     const imageQs = /image=(.*)/g.exec(window.location.search);
     const sourceQs = /sources=(.*)/g.exec(window.location.search);
     const p3ManifestQs = /manifest=(.*)/g.exec(window.location.search)
-    if(imageQs && imageQs[1]){
+    if (imageQs && imageQs[1]) {
         let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
         sourcesMap[imageServiceId] = {
             "type": IMAGE_SERVICE_TYPE,
             "id": imageServiceId
         }
         selectResource(imageServiceId);
-    } else if(sourceQs && sourceQs[1]) {
+    } else if (sourceQs && sourceQs[1]) {
         loadSourceList(sourceQs[1]).then(sources => {
             populateSourceList(sources);
         });
-    } else if(p3ManifestQs && p3ManifestQs[1]) {
+    } else if (p3ManifestQs && p3ManifestQs[1]) {
         loadResourceFromManifest(p3ManifestQs[1]).then(resource => {
             selectResource(resource);
-        });    
+        });
     } else {
         document.querySelector("h1").innerText = "(no image on query string)";
     }
 }
 
-function selectResource(resourceOrResourceId){
+function selectResource(resourceOrResourceId) {
     let resource;
     let resourceId;
-    if(resourceOrResourceId.hasOwnProperty("id")){
+    if (resourceOrResourceId.hasOwnProperty("id")) {
         resourceId = resourceOrResourceId.id;
         resource = resourceOrResourceId;
     } else {
@@ -162,22 +168,22 @@ function selectResource(resourceOrResourceId){
     document.querySelector("h1").innerText = resourceId;
     let resourceAnchor = document.getElementById("infoJson");
     let resourceUrl = resourceId + "/info.json";
-    if(resource && resource.type != IMAGE_SERVICE_TYPE){
+    if (resource && resource.type != IMAGE_SERVICE_TYPE) {
         // not an info.json; just display a link
         resourceUrl = resource.id;
-    }    
+    }
     resourceAnchor.href = resourceUrl;
     resourceAnchor.innerText = resourceUrl;
     loadResource(resourceId).then(infoResponse => {
-        if(infoResponse){
-            if(infoResponse.degraded || infoResponse.status === 401){
+        if (infoResponse) {
+            if (infoResponse.degraded || infoResponse.status === 401) {
                 doAuthChain(infoResponse);
             }
         }
     });
 }
 
-function populateSourceList(sources){
+function populateSourceList(sources) {
     sourcesMap = {};
     let sourceList = document.getElementById("sourceList");
     sources.forEach(image => {
@@ -187,18 +193,18 @@ function populateSourceList(sources){
         sourceList.appendChild(opt);
         sourcesMap[image.id] = image;
     });
-    sourceList.style.display = "block";    
+    sourceList.style.display = "block";
     sourceList.addEventListener("change", () => {
         selectResource(sourceList.options[sourceList.selectedIndex].value);
     });
     let reloadButton = document.getElementById("reloadSource");
-    reloadButton.style.display = "block";    
+    reloadButton.style.display = "block";
     reloadButton.addEventListener("click", () => {
         selectResource(sourceList.options[sourceList.selectedIndex].value);
-    }); 
+    });
 }
 
-function loadResourceFromManifest(manifestUrl){
+function loadResourceFromManifest(manifestUrl) {
     // This auth demo is not a Presentation API client, it's only for
     // resources. But service-less resources are going to be found in
     // Presentation 3 manifests, so it needs to load them to test. This
@@ -207,13 +213,13 @@ function loadResourceFromManifest(manifestUrl){
     return new Promise((resolve, reject) => {
         const request = new XMLHttpRequest();
         request.open('GET', manifestUrl);
-        request.onload = function(){
+        request.onload = function() {
             try {
-                if(this.status === 200){
+                if (this.status === 200) {
                     manifest = JSON.parse(this.response);
-                    if(    manifest.items
-                        && manifest.items[0].items
-                        && manifest.items[0].items[0].items){
+                    if (manifest.items &&
+                        manifest.items[0].items &&
+                        manifest.items[0].items[0].items) {
                         // this is very fragile
                         const resource = manifest.items[0].items[0].items[0].body;
                         sourcesMap[resource.id] = resource;
@@ -221,68 +227,68 @@ function loadResourceFromManifest(manifestUrl){
                         resolve(resource);
                     } else {
                         reject("Cannot find Presentation 3 resource in this manifest");
-                    }                    
+                    }
                 } else {
                     reject(this.status + " " + this.statusText);
-                } 
-            } catch(e) {
+                }
+            } catch (e) {
                 reject(e.message);
             }
         };
         request.onerror = function() {
             reject(this.status + " " + this.statusText);
-        };        
+        };
         request.send();
     });
 }
 
 
 // load a set of sample images from an instance of iiif-auth-server
-function loadSourceList(sourcesUrl){
+function loadSourceList(sourcesUrl) {
     return new Promise((resolve, reject) => {
         const request = new XMLHttpRequest();
         request.open('GET', sourcesUrl);
-        request.onload = function(){
+        request.onload = function() {
             try {
-                if(this.status === 200){
+                if (this.status === 200) {
                     resolve(JSON.parse(this.response));
                 } else {
                     reject(this.status + " " + this.statusText);
-                } 
-            } catch(e) {
+                }
+            } catch (e) {
                 reject(e.message);
             }
         };
         request.onerror = function() {
             reject(this.status + " " + this.statusText);
-        };        
+        };
         request.send();
     });
 }
 
-async function loadResource(resourceId, token){
+async function loadResource(resourceId, token) {
     let infoResponse;
-    try{
+    try {
         infoResponse = await getInfoResponse(resourceId, token);
     } catch (e) {
         log("Could not load " + resourceId);
         log(e);
     }
-    if(infoResponse && infoResponse.status === 200){
+    if (infoResponse && infoResponse.status === 200) {
         renderResource(infoResponse, resourceId);
     }
     return infoResponse;
 }
 
-function renderResource(infoResponse, requestedResource){
+function renderResource(infoResponse, requestedResource) {
     destroyViewer();
-    if(infoResponse.info.id != requestedResource){
+    if (infoResponse.info.id != requestedResource) {
         log("The requested imageService is " + requestedResource);
         log("The id returned is " + infoResponse.info.id);
         log("This image is most likely the degraded version of the one you asked for")
         infoResponse.degraded = true;
     }
-    if(infoResponse.info.type == IMAGE_SERVICE_TYPE){
+    if (infoResponse.info.type == IMAGE_SERVICE_TYPE) {
         log("This resource is an image service.");
         renderImageService(infoResponse.info);
     } else {
@@ -291,17 +297,17 @@ function renderResource(infoResponse, requestedResource){
         let viewerHTML;
         let isDash = (infoResponse.info.format == "application/dash+xml");
         let avUrl = infoResponse.info.id;
-        if(infoResponse.info.type == "Video"){
-            viewerHTML = "<video id='html5AV' src='" + avUrl + "' autoplay>Video here</video>";            
-        } else if(infoResponse.info.type == "Audio"){
+        if (infoResponse.info.type == "Video") {
+            viewerHTML = "<video id='html5AV' src='" + avUrl + "' autoplay>Video here</video>";
+        } else if (infoResponse.info.type == "Audio") {
             viewerHTML = "<audio id='html5AV' src='" + avUrl + "' autoplay>audio here</audio>";
-        } else if(infoResponse.info.type == "Text" || infoResponse.info.type == "PhysicalObject"){
+        } else if (infoResponse.info.type == "Text" || infoResponse.info.type == "PhysicalObject") {
             viewerHTML = "<a href='" + infoResponse.info.id + "' target='_blank'>Open document - " + infoResponse.info.label + "</a>";
         } else {
             viewerHTML = "<p>Not a known type</p>";
         }
         document.getElementById("viewer").innerHTML = viewerHTML;
-        if(isDash){
+        if (isDash) {
             dashPlayer = dashjs.MediaPlayer().create();
             // Only send credentials for a DASH request if an auth service was present on the resource.
             let withCredentials = infoResponse.cookieService != null;
@@ -319,8 +325,8 @@ function renderResource(infoResponse, requestedResource){
     }
 }
 
-function destroyViewer(){
-    if(viewer){
+function destroyViewer() {
+    if (viewer) {
         viewer.destroy();
         viewer = null;
     }
@@ -329,7 +335,7 @@ function destroyViewer(){
     document.getElementById("largeDownload").innerHTML = "";
 }
 
-function renderImageService(info){
+function renderImageService(info) {
     log("OSD will load " + info["@id"]);
     viewer = OpenSeadragon({
         id: "viewer",
@@ -339,59 +345,59 @@ function renderImageService(info){
     makeDownloadLink(info);
 }
 
-function makeDownloadLink(info){
+function makeDownloadLink(info) {
     let largeDownload = document.getElementById("largeDownload");
     let w = info["width"];
     let h = info["height"]
     let dims = "(" + w + " x " + h + ")";
     maxWAssertion = first(info["profile"], pf => pf["maxWidth"]);
-    if(maxWAssertion){
+    if (maxWAssertion) {
         dims += " (max width is " + maxWAssertion["maxWidth"] + ")";
     }
     largeDownload.innerText = "Download large image: " + dims;
     largeDownload.setAttribute("href", info["@id"] + "/full/full/0/default.jpg")
 }
 
-function asArray(obj){
+function asArray(obj) {
     // wrap in array if singleton
-    if(obj){
+    if (obj) {
         return (obj.constructor === Array ? obj : [obj]);
     }
     return [];
 }
 
-function first(objOrArray, predicate){
+function first(objOrArray, predicate) {
     let arr = asArray(objOrArray);
     let filtered = arr.filter(predicate);
-    if(filtered.length > 0){
+    if (filtered.length > 0) {
         return filtered[0];
     }
     return null;
 }
 
-async function attemptImageWithToken(authService, imageService){
+async function attemptImageWithToken(authService, imageService) {
     log("attempting token interaction for " + authService["@id"]);
     let tokenService = first(authService.service, s => s.profile === PROFILE_TOKEN);
-    if(tokenService){
+    if (tokenService) {
         log("found token service: " + tokenService["@id"]);
-        let tokenMessage = await openTokenService(tokenService); 
-        if(tokenMessage && tokenMessage.accessToken){
+        let tokenMessage = await openTokenService(tokenService);
+        if (tokenMessage && tokenMessage.accessToken) {
             let withTokenInfoResponse = await loadResource(imageService, tokenMessage.accessToken);
             log("info request with token resulted in " + withTokenInfoResponse.status);
-            if(withTokenInfoResponse.status == 200){
+            if (withTokenInfoResponse.status == 200) {
                 renderResource(withTokenInfoResponse, imageService);
                 return true;
             }
-        }  
+        }
     }
     log("Didn't get a 200 info response.")
     return false;
 }
 
-async function doAuthChain(infoResponse){
+async function doAuthChain(infoResponse) {
     // This function enters the flowchart at the < External? > junction
     // http://iiif.io/api/auth/1.0/#workflow-from-the-browser-client-perspective
-    if(!infoResponse.info.service){
+    if (!infoResponse.info.service) {
         log("No services found")
         return;
     }
@@ -400,24 +406,24 @@ async function doAuthChain(infoResponse){
     let requestedId = infoResponse.requestedId;
 
     // repetition of logic is left in these steps for clarity:
-    
+
     log("Looking for external pattern");
     let serviceToTry = first(services, s => s.profile === PROFILE_EXTERNAL);
-    if(serviceToTry){
+    if (serviceToTry) {
         lastAttempted = serviceToTry;
         let success = await attemptImageWithToken(serviceToTry, requestedId);
-        if(success) return;
+        if (success) return;
     }
 
     log("Looking for kiosk pattern");
     serviceToTry = first(services, s => s.profile === PROFILE_KIOSK);
-    if(serviceToTry){
+    if (serviceToTry) {
         lastAttempted = serviceToTry;
         let kioskWindow = openContentProviderWindow(serviceToTry);
-        if(kioskWindow){
+        if (kioskWindow) {
             await userInteractionWithContentProvider(kioskWindow);
             let success = await attemptImageWithToken(serviceToTry, requestedId);
-            if(success) return;
+            if (success) return;
         } else {
             log("Could not open kiosk window");
         }
@@ -433,28 +439,28 @@ async function doAuthChain(infoResponse){
 
     log("Looking for clickthrough pattern");
     serviceToTry = first(services, s => s.profile === PROFILE_CLICKTHROUGH);
-    if(serviceToTry){
+    if (serviceToTry) {
         lastAttempted = serviceToTry;
         let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
-        if(contentProviderWindow){
+        if (contentProviderWindow) {
             // should close immediately
             await userInteractionWithContentProvider(contentProviderWindow);
             let success = await attemptImageWithToken(serviceToTry, requestedId);
-            if(success) return;
-        } 
+            if (success) return;
+        }
     }
 
     log("Looking for login pattern");
     serviceToTry = first(services, s => s.profile === PROFILE_LOGIN);
-    if(serviceToTry){
+    if (serviceToTry) {
         lastAttempted = serviceToTry;
         let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
-        if(contentProviderWindow){
+        if (contentProviderWindow) {
             // we expect the user to spend some time interacting
             await userInteractionWithContentProvider(contentProviderWindow);
             let success = await attemptImageWithToken(serviceToTry, requestedId);
-            if(success) return;
-        } 
+            if (success) return;
+        }
     }
 
     // nothing worked! Use the most recently tried service as the source of
@@ -465,27 +471,27 @@ async function doAuthChain(infoResponse){
 // determine the postMessage-style origin for a URL
 function getOrigin(url) {
     let urlHolder = window.location;
-    if(url){
+    if (url) {
         urlHolder = document.createElement('a');
         urlHolder.href = url;
     }
-    return urlHolder.protocol + "//" + urlHolder.hostname + (urlHolder.port ? ':' + urlHolder.port: '');
+    return urlHolder.protocol + "//" + urlHolder.hostname + (urlHolder.port ? ':' + urlHolder.port : '');
 }
 
-function* MessageIdGenerator(){
+function* MessageIdGenerator() {
     var messageId = 1; // don't start at 0, it's falsey
-    while(true) yield messageId++;
+    while (true) yield messageId++;
 }
 
 var messageIds = MessageIdGenerator();
 
-function openTokenService(tokenService){
+function openTokenService(tokenService) {
     // use a Promise across a postMessage call. Discuss...
     return new Promise((resolve, reject) => {
         // if necessary, the client can decide not to trust this origin
         const serviceOrigin = getOrigin(tokenService["@id"]);
         const messageId = messageIds.next().value;
-        messages[messageId] = { 
+        messages[messageId] = {
             "resolve": resolve,
             "reject": reject,
             "serviceOrigin": serviceOrigin
@@ -496,7 +502,7 @@ function openTokenService(tokenService){
         // reject any unhandled messages after a configurable timeout
         const postMessageTimeout = 5000;
         setTimeout(() => {
-            if(messages[messageId]){
+            if (messages[messageId]) {
                 messages[messageId].reject(
                     "Message unhandled after " + postMessageTimeout + "ms, rejecting");
                 delete messages[messageId];
@@ -508,30 +514,29 @@ function openTokenService(tokenService){
 // The event listener for postMessage. Needs to take care it only
 // responds to messages initiated by openTokenService(..)
 // Completes promises made in openTokenService(..)
-function receiveMessage(event) {    
+function receiveMessage(event) {
     log("event received, origin=" + event.origin);
     log(JSON.stringify(event.data));
     let rejectValue = "postMessage event received but rejected.";
-    if(event.data.hasOwnProperty("messageId")){
+    if (event.data.hasOwnProperty("messageId")) {
         log("recieved message with id " + event.data.messageId);
         var message = messages[event.data.messageId];
-        if(message && event.origin == message.serviceOrigin)
-        {
+        if (message && event.origin == message.serviceOrigin) {
             // Any message with a messageId is a success
             log("We trust that we triggered this message, so resolve")
             message.resolve(event.data);
             delete messages[event.data.messageId];
             return;
-        }    
+        }
     }
 }
 
-function userInteractionWithContentProvider(contentProviderWindow){
+function userInteractionWithContentProvider(contentProviderWindow) {
     return new Promise((resolve) => {
         // What happens here is forever a mystery to a client application.
         // It can but wait.
         var poll = window.setInterval(() => {
-            if(contentProviderWindow.closed){
+            if (contentProviderWindow.closed) {
                 log("cookie service window is now closed")
                 window.clearInterval(poll);
                 resolve();
@@ -540,10 +545,10 @@ function userInteractionWithContentProvider(contentProviderWindow){
     });
 }
 
-function sanitise(s, allowHtml){
+function sanitise(s, allowHtml) {
     // Unimplemented
     // Viewers should already have an HTML sanitiser library, for metadata etc
-    if(allowHtml){
+    if (allowHtml) {
         // sanitise but allow permitted tags
         return s;
     }
@@ -551,13 +556,13 @@ function sanitise(s, allowHtml){
     return s;
 }
 
-function openContentProviderWindow(service){
+function openContentProviderWindow(service) {
     let cookieServiceUrl = service["@id"] + "?origin=" + getOrigin();
     log("Opening content provider window: " + cookieServiceUrl);
     return window.open(cookieServiceUrl);
 }
 
-function getContentProviderWindowFromModal(service){
+function getContentProviderWindowFromModal(service) {
     return new Promise(resolve => {
         hideModals();
         modal = document.getElementById("beforeOpenCookieServiceModal");
@@ -575,37 +580,37 @@ function getContentProviderWindowFromModal(service){
             hideModals();
             resolve(null);
         });
-        if(service.label){
+        if (service.label) {
             modal.querySelector("#csLabel").innerText = sanitise(service.label);
         }
-        if(service.header){
+        if (service.header) {
             modal.querySelector("#csHeader").innerText = sanitise(service.header);
         }
-        if(service.description){
+        if (service.description) {
             modal.querySelector("#csDescription").innerText = sanitise(service.description, true);
         }
-        if(service.confirmLabel){
+        if (service.confirmLabel) {
             modal.querySelector("#csConfirm").innerText = sanitise(service.confirmLabel);
         }
         modal.style.display = "block";
     });
 }
 
-function showOutOfOptionsMessages(service){
+function showOutOfOptionsMessages(service) {
     hideModals();
     modal = document.getElementById("failureModal");
     modal.querySelector(".close").onclick = (ev => hideModals());
     modal.querySelector("#failureClose").onclick = (ev => hideModals());
-    if(service.failureHeader){
+    if (service.failureHeader) {
         modal.querySelector("#failureHeader").innerText = sanitise(service.failureHeader);
     }
-    if(service.failureDescription){
+    if (service.failureDescription) {
         modal.querySelector("#failureDescription").innerText = sanitise(service.failureDescription, true);
     }
     modal.style.display = "block";
 }
 
-function hideModals(){
+function hideModals() {
     let modals = document.querySelectorAll(".modal");
     modals.forEach(m => {
         m.style.display = "none";
